@@ -1,6 +1,6 @@
 import psycopg2
 import json
-from config import config
+from src.config import config
 
 
 class PostgresDB:
@@ -70,7 +70,7 @@ class PostgresDB:
 
 
 
-        with open('./data.json', 'w', encoding='utf-8') as file:
+        with open('../data.json', 'w', encoding='utf-8') as file:
             json.dump(data, file, indent=4)
 
 

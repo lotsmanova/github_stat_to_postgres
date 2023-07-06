@@ -1,4 +1,4 @@
-from functions import get_repos_stats
+from src.functions import get_repos_stats
 from postgres_db import PostgresDB
 
 def main():
