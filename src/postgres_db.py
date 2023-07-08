@@ -1,85 +1,60 @@
 import psycopg2
 import json
-from src.config import config
 
 
 class PostgresDB:
     """Класс для взаимодействия с Postgres"""
-    def __init__(self, database_name: str) -> None:
-        """Инициализация экземпляра класса"""
-        self.params = config()
-        self.database_name = database_name
+    def __init__(self, dbname: str, user: str, password: str,
+                 host: str = 'localhost', port: str = '5432', table_name: str = 'repos'):
+        """Инициализация класса и создание таблицы в БД"""
+        self.conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
+        self.cur = self.conn.cursor()
+        self.table_name = table_name
+
+        self._create_table()
 
 
-    def create_database(self):
-        """Создание базы данных"""
-        conn = psycopg2.connect(dbname='postgres', **self.params)
-        conn.autocommit = True
-        cur = conn.cursor()
-
-        cur.execute(f"DROP DATABASE {self.database_name}")
-        cur.execute(f"CREATE DATABASE {self.database_name}")
-
-        cur.close()
-        conn.close()
-
-
-    def create_table(self):
-        """Метод создания таблицы"""
-        conn = psycopg2.connect(dbname=self.database_name, **self.params)
-        with conn.cursor() as cur:
-            cur.execute("""
-                    CREATE TABLE repos (
-                        repos_id SERIAL PRIMARY KEY,
-                        name_repos VARCHAR(100) NOT NULL,
-                        url TEXT,
-                        stars INT,
-                        forks INT,
-                        watchers INT
-                    )
-                """)
-        conn.commit()
-        conn.close()
+    def _create_table(self):
+        """Создание таблицы в БД"""
+        with self.conn:
+            self.cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                id SERIAL PRIMARY KEY, 
+                name_repos VARCHAR(255), 
+                stars INT, 
+                forks INT
+            );
+        """)
 
 
-    def add_data_to_table(self, data_github: list[dict]) -> None:
+    def add_data_to_table(self, stats: list[dict]):
         """Метод добавления данных в таблицу"""
-        conn = psycopg2.connect(dbname=self.database_name, **self.params)
-
-        with conn.cursor() as cur:
-            for data in data_github:
-                cur.execute(
-                    """
-                    INSERT INTO repos (name_repos, url, stars, forks, watchers)
-                    VALUES (%s, %s, %s, %s, %s)
-                    
-                    """,
-                    (data['name'], data['url'], data['stars'], data['forks'], data['watchers'])
-                )
-        conn.commit()
-        conn.close()
+        with self.conn:
+            for stat in stats:
+                self.cur.execute(
+                    f"INSERT INTO {self.table_name} (name_repos, stars, forks) VALUES (%s, %s, %s)",
+                    (stat["name"], stat["stars"], stat["forks"]))
 
 
     def save_data_to_json(self):
         """Сохранение данных в json и получение данных из таблицы"""
-        conn = psycopg2.connect(dbname=self.database_name, **self.params)
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM repos")
-            data = cur.fetchall()
-        conn.close()
+        with self.conn:
+            self.cur.execute(f"SELECT * FROM {self.table_name}")
+            data = self.cur.fetchall()
+            data_dict = [{"id": d[0], "name": d[1], "stars": d[2], "forks": d[3]} for d in data]
+            with open(f"{self.table_name}.json", "w") as f:
+                json.dump(data_dict, f, indent=4)
 
 
-
-        with open('../data.json', 'w', encoding='utf-8') as file:
-            json.dump(data, file, indent=4)
-
-
-    def get_data(self):
+    def get_data(self, count: int, sort_by: str = 'name') -> list[dict]:
         """Получение данных из таблицы"""
-        conn = psycopg2.connect(dbname=self.database_name, **self.params)
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM repos")
-            data = cur.fetchall()
-        return data
-
-
+        with self.conn:
+            if sort_by == 'name' or sort_by == 'language':
+                self.cur.execute(f"SELECT * FROM {self.table_name} ORDER BY {sort_by} LIMIT {count}")
+            elif sort_by == 'stars' or sort_by == 'forks':
+                self.cur.execute(f"SELECT * FROM {self.table_name} ORDER BY {sort_by} DESC LIMIT {count}")
+            else:
+                self.cur.execute(f"SELECT * FROM {self.table_name} ORDER BY name_repos LIMIT {count}")
+            data = self.cur.fetchall()
+            data_dict = [{"name": d[1], "stars": d[2], "forks": d[3]} for d in data]
+            return data_dict
